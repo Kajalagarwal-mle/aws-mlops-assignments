@@ -3,6 +3,7 @@ from pyspark.sql import SparkSession
 from pyspark.sql.functions import col
 from pyspark.ml.feature import Imputer, StringIndexer, OneHotEncoder, VectorAssembler, StandardScaler
 from pyspark.ml import Pipeline
+from pyspark.ml.regression import LinearRegression
 from awsglue.context import GlueContext
 from awsglue.job import Job
 from awsglue.utils import getResolvedOptions
@@ -26,7 +27,8 @@ OUTPUT_PATH = "s3://tiger-mle-pg/home/kajal.agarwal/"
 housing_df = spark.read.csv(INPUT_PATH, header=True, inferSchema=True)
 
 # Define numerical and categorical attributes
-num_attribs = ["longitude", "latitude", "housing_median_age", "total_rooms", "total_bedrooms", "population", "households", "median_income"]
+num_attribs = ["longitude", "latitude", "housing_median_age", "total_rooms", "total_bedrooms", 
+               "population", "households", "median_income"]
 cat_attribs = ["ocean_proximity"]
 
 # Handle missing values
@@ -56,11 +58,25 @@ housing_prepared = pipeline.fit(housing_df).transform(housing_df)
 # Split data into train and test sets
 train_data, test_data = housing_prepared.randomSplit([0.8, 0.2], seed=42)
 
-# Write to S3
-train_data.write.mode("overwrite").parquet(OUTPUT_PATH + "train_data")
-test_data.write.mode("overwrite").parquet(OUTPUT_PATH + "test_data")
+# Train a Linear Regression Model
+lr = LinearRegression(featuresCol="scaled_features", labelCol="median_house_value")
+lr_model = lr.fit(train_data)
 
-print(f"Processed data saved to {OUTPUT_PATH}")
+# Make predictions on test data
+predictions = lr_model.transform(test_data)
 
+# Save model metrics to S3
+model_summary = {
+    "RMSE": lr_model.summary.rootMeanSquaredError,
+    "r2": lr_model.summary.r2,
+    "MAE": lr_model.summary.meanAbsoluteError
+}
+
+print(f"Model Performance: RMSE={model_summary['RMSE']}, R2={model_summary['r2']}, MAE={model_summary['MAE']}")
+
+# Save predictions
+predictions.select("scaled_features", "median_house_value", "prediction").write.mode("overwrite").parquet(OUTPUT_PATH + "predictions")
+
+# Commit AWS Glue Job
 job.commit()
 
