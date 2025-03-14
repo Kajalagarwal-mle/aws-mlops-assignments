@@ -5,7 +5,7 @@ import datetime
 autoscaling = boto3.client("autoscaling")
 
 # Define your Auto Scaling Group name
-ASG_NAME = "your-auto-scaling-group-name"
+ASG_NAME = "flask-rds-kajal-asg"
 
 def lambda_handler(event, context):
     # Get the current day of the week
